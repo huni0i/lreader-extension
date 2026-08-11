@@ -13,6 +13,15 @@ const IMAGE_ATTRIBUTES = [
   "data-lazy-src",
 ] as const;
 
+const SITE_IMAGE_ROOTS: Record<string, string> = {
+  "comic.naver.com": "#sectionContWide",
+};
+
+function imageRoot(): ParentNode {
+  const selector = SITE_IMAGE_ROOTS[window.location.hostname];
+  return (selector && document.querySelector(selector)) || document;
+}
+
 function toAbsoluteUrl(value: string | null | undefined): string | null {
   if (!value) return null;
 
@@ -35,8 +44,9 @@ function srcsetUrls(value: string | null): string[] {
 
 export function collectComicImages(): ComicImage[] {
   const candidates = new Map<string, HTMLImageElement | null>();
+  const root = imageRoot();
 
-  for (const image of document.images) {
+  for (const image of root.querySelectorAll<HTMLImageElement>("img")) {
     const urls = [
       toAbsoluteUrl(image.currentSrc),
       ...IMAGE_ATTRIBUTES.map((attribute) =>
@@ -50,7 +60,7 @@ export function collectComicImages(): ComicImage[] {
     }
   }
 
-  for (const source of document.querySelectorAll("source")) {
+  for (const source of root.querySelectorAll("source")) {
     const urls = [
       ...srcsetUrls(source.getAttribute("srcset")),
       ...srcsetUrls(source.getAttribute("data-srcset")),
