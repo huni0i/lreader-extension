@@ -1,0 +1,25 @@
+{
+  "name": "lreader",
+  "version": "0.1.0",
+  "description": "Local-first multilingual comic translation browser extension",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:edge": "wxt -b edge",
+    "build": "wxt build",
+    "build:edge": "wxt build -b edge",
+    "compile": "wxt prepare && tsc --noEmit"
+  },
+  "keywords": [
+    "browser-extension",
+    "comic",
+    "ocr",
+    "translation"
+  ],
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "wxt": "^0.21.3"
+  }
+}
