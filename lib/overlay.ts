@@ -98,7 +98,7 @@ export function renderTranslationOverlays(
       overflow: "hidden",
       padding: `${padding}px`,
       borderRadius: "10%",
-      background: inpaintedImage ? "transparent" : "rgba(255, 255, 255, 0.98)",
+      background: "rgba(255, 255, 255, 0.96)",
       color: "#111827",
       fontFamily: '"AppleMyungjo", "Nanum Myeongjo", Georgia, serif',
       fontWeight: "600",
