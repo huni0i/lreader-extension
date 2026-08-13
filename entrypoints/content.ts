@@ -277,7 +277,11 @@ function mountWidget(): void {
               referrer: window.location.href,
               sourceLanguage: activeSourceLanguage,
               targetLanguage: targetSelect.value as SupportedLanguage,
-              quality: "ocr",
+              quality:
+                activeSourceLanguage === "ja" ||
+                activeSourceLanguage === "auto"
+                  ? "ocr"
+                  : "fast",
               inpaint: true,
               inpaintMethod: "opencv",
             },
