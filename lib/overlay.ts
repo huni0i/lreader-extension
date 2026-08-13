@@ -33,6 +33,55 @@ function fitText(element: HTMLDivElement, initialSize: number): void {
   }
 }
 
+function estimateFontSize(text: string, width: number, height: number): number {
+  const glyphCount = Math.max(1, [...text.replace(/\s/g, "")].length);
+  const areaBasedSize = Math.sqrt((width * height) / glyphCount) * 0.72;
+  const regionLimit = Math.min(42, height * 0.3, width * 0.12);
+  return Math.max(10, Math.min(areaBasedSize, regionLimit));
+}
+
+interface RegionBounds {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+function boundsOf(points: Array<{ x: number; y: number }>): RegionBounds {
+  return {
+    left: Math.min(...points.map((point) => point.x)),
+    top: Math.min(...points.map((point) => point.y)),
+    right: Math.max(...points.map((point) => point.x)),
+    bottom: Math.max(...points.map((point) => point.y)),
+  };
+}
+
+function selectRegionBounds(region: TranslationRegion): RegionBounds {
+  const detected = boundsOf(region.polygon);
+  const textPoints = region.text_polygons?.flat() ?? [];
+  if (!textPoints.length) return detected;
+
+  const text = boundsOf(textPoints);
+  const detectedWidth = detected.right - detected.left;
+  const detectedHeight = detected.bottom - detected.top;
+  const textWidth = Math.max(1, text.right - text.left);
+  const textHeight = Math.max(1, text.bottom - text.top);
+  const oversized =
+    detectedWidth * detectedHeight > textWidth * textHeight * 8 ||
+    detectedWidth > textWidth * 3.5 ||
+    detectedHeight > textHeight * 4;
+  if (!oversized) return detected;
+
+  const horizontalPadding = Math.max(12, textWidth * 0.28);
+  const verticalPadding = Math.max(10, textHeight * 0.22);
+  return {
+    left: Math.max(detected.left, text.left - horizontalPadding),
+    top: Math.max(detected.top, text.top - verticalPadding),
+    right: Math.min(detected.right, text.right + horizontalPadding),
+    bottom: Math.min(detected.bottom, text.bottom + verticalPadding),
+  };
+}
+
 export function renderTranslationOverlays(
   image: ComicImage,
   regions: TranslationRegion[],
@@ -74,23 +123,25 @@ export function renderTranslationOverlays(
   }
 
   for (const region of regions) {
-    const xs = region.polygon.map((point) => point.x);
-    const ys = region.polygon.map((point) => point.y);
-    const left = window.scrollX + rect.left + Math.min(...xs) * scaleX;
-    const top = window.scrollY + rect.top + Math.min(...ys) * scaleY;
-    const width = (Math.max(...xs) - Math.min(...xs)) * scaleX;
-    const height = (Math.max(...ys) - Math.min(...ys)) * scaleY;
-    const padding = Math.max(3, Math.min(width, height) * 0.04);
+    const bounds = selectRegionBounds(region);
+    const left = window.scrollX + rect.left + bounds.left * scaleX;
+    const top = window.scrollY + rect.top + bounds.top * scaleY;
+    const width = (bounds.right - bounds.left) * scaleX;
+    const height = (bounds.bottom - bounds.top) * scaleY;
+    const inset = Math.max(2, Math.min(width, height) * 0.035);
+    const innerWidth = Math.max(12, width - inset * 2);
+    const innerHeight = Math.max(12, height - inset * 2);
+    const padding = Math.max(2, Math.min(innerWidth, innerHeight) * 0.03);
 
     const overlay = document.createElement("div");
     overlay.className = OVERLAY_CLASS;
     overlay.dataset.imageIndex = String(image.index);
     Object.assign(overlay.style, {
       position: "absolute",
-      left: `${left - padding}px`,
-      top: `${top - padding}px`,
-      width: `${width + padding * 2}px`,
-      height: `${height + padding * 2}px`,
+      left: `${left + inset}px`,
+      top: `${top + inset}px`,
+      width: `${innerWidth}px`,
+      height: `${innerHeight}px`,
       zIndex: "2147483000",
       display: "flex",
       alignItems: "center",
@@ -98,7 +149,7 @@ export function renderTranslationOverlays(
       overflow: "hidden",
       padding: `${padding}px`,
       borderRadius: "10%",
-      background: "rgba(255, 255, 255, 0.96)",
+      background: "transparent",
       color: "#111827",
       fontFamily: '"AppleMyungjo", "Nanum Myeongjo", Georgia, serif',
       fontWeight: "600",
@@ -113,8 +164,10 @@ export function renderTranslationOverlays(
     overlay.textContent = region.translated_text;
     document.body.append(overlay);
 
-    const sourceLineCount = Math.max(1, region.text.split(/\r?\n/).length);
-    fitText(overlay, Math.max(11, height / (sourceLineCount * 1.2)));
+    fitText(
+      overlay,
+      estimateFontSize(region.translated_text, innerWidth, innerHeight),
+    );
   }
 
   return regions.length;
