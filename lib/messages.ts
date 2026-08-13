@@ -1,4 +1,5 @@
 export type SupportedLanguage = "ja" | "en" | "zh" | "ko";
+export type SourceLanguage = "auto" | SupportedLanguage;
 
 export interface TranslationRegion {
   polygon: Array<{ x: number; y: number }>;
@@ -9,6 +10,7 @@ export interface TranslationRegion {
 }
 
 export interface ImageTranslationResult {
+  source_language: SupportedLanguage;
   regions: TranslationRegion[];
   inpainted_image: string | null;
 }
@@ -17,10 +19,11 @@ export interface TranslateImageMessage {
   type: "translate-image";
   payload: {
     url: string;
+    imageData?: string;
     referrer: string;
-    sourceLanguage: SupportedLanguage;
+    sourceLanguage: SourceLanguage;
     targetLanguage: SupportedLanguage;
-    quality: "fast" | "balanced";
+    quality: "fast" | "ocr" | "balanced";
     inpaint: boolean;
     inpaintMethod: "opencv" | "lama";
   };
