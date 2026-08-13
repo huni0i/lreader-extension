@@ -1,6 +1,18 @@
 import { collectComicImages } from "../lib/images";
+import type {
+  ImageTranslationResult,
+  SupportedLanguage,
+  TranslateImageMessage,
+} from "../lib/messages";
+import { renderTranslationOverlays } from "../lib/overlay";
 
 type LanguageCode = "auto" | "ja" | "en" | "zh" | "ko";
+
+function resolveSourceLanguage(value: LanguageCode): SupportedLanguage | null {
+  if (value !== "auto") return value;
+  if (window.location.hostname === "comic.naver.com") return "ko";
+  return null;
+}
 
 function createOption(value: LanguageCode, label: string): HTMLOptionElement {
   const option = document.createElement("option");
@@ -98,12 +110,19 @@ function mountWidget(): void {
       font-weight: 750;
     }
     .action:hover { background: #6d28d9; }
+    .action:disabled { cursor: wait; opacity: .65; }
+    .secondary {
+      margin-top: 8px;
+      background: #334155;
+    }
+    .secondary:hover { background: #475569; }
     .status {
       min-height: 18px;
       margin: 12px 2px 0;
       color: #cbd5e1;
       font-size: 12px;
       line-height: 1.5;
+      white-space: pre-wrap;
     }
   `;
 
@@ -154,8 +173,12 @@ function mountWidget(): void {
   status.className = "status";
   status.textContent = "페이지 구조를 먼저 확인해 이미지 수집 가능성을 테스트합니다.";
 
+  let images = collectComicImages();
+  let isTranslatingChapter = false;
+  let stopRequested = false;
+
   action.addEventListener("click", () => {
-    const images = collectComicImages();
+    images = collectComicImages();
     status.textContent = images.length
       ? `번역 후보 이미지 ${images.length}개를 찾았습니다.`
       : "300px 이상인 번역 후보 이미지를 찾지 못했습니다.";
@@ -167,7 +190,103 @@ function mountWidget(): void {
     });
   });
 
-  panel.append(header, fields, action, status);
+  const translateAction = document.createElement("button");
+  translateAction.className = "action secondary";
+  translateAction.type = "button";
+  translateAction.textContent = "이 화 전체 번역";
+  translateAction.addEventListener("click", async () => {
+    if (isTranslatingChapter) {
+      stopRequested = true;
+      translateAction.textContent = "현재 이미지 처리 후 중지합니다…";
+      status.textContent = "번역 중지를 요청했습니다.";
+      return;
+    }
+
+    const sourceLanguage = resolveSourceLanguage(
+      sourceSelect.value as LanguageCode,
+    );
+    if (!sourceLanguage) {
+      status.textContent =
+        "이 사이트에서는 아직 원문 언어를 직접 선택해야 합니다.";
+      return;
+    }
+
+    images = collectComicImages();
+    if (!images.length) {
+      status.textContent = "이 화에서 번역할 이미지를 찾지 못했습니다.";
+      return;
+    }
+
+    isTranslatingChapter = true;
+    stopRequested = false;
+    action.disabled = true;
+    sourceSelect.disabled = true;
+    targetSelect.disabled = true;
+    translateAction.textContent = "번역 중지";
+    let completed = 0;
+    let rendered = 0;
+    const failures: string[] = [];
+
+    try {
+      for (const image of images) {
+        if (stopRequested) break;
+
+        status.textContent =
+          `전체 ${images.length}장 중 ${completed + 1}번째 이미지를 ` +
+          "번역하고 있습니다…";
+
+        const message: TranslateImageMessage = {
+          type: "translate-image",
+          payload: {
+            url: image.url,
+            referrer: window.location.href,
+            sourceLanguage,
+            targetLanguage: targetSelect.value as SupportedLanguage,
+            quality: "fast",
+            inpaint: true,
+            inpaintMethod: "opencv",
+          },
+        };
+        const response = (await browser.runtime.sendMessage(message)) as
+          | ImageTranslationResult
+          | { error: string };
+
+        if ("error" in response) {
+          failures.push(`${image.index + 1}번: ${response.error}`);
+        } else {
+          rendered += renderTranslationOverlays(
+            image,
+            response.regions,
+            response.inpainted_image,
+          );
+        }
+        completed += 1;
+
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, 0);
+        });
+      }
+
+      const stopped = stopRequested ? "사용자 요청으로 중지했습니다. " : "";
+      status.textContent =
+        `${stopped}${completed}/${images.length}장 처리, ` +
+        `번역문 ${rendered}개 표시, 실패 ${failures.length}장.` +
+        (failures.length ? `\n${failures.slice(0, 3).join("\n")}` : "");
+    } catch (error) {
+      status.textContent = `번역 실패: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+    } finally {
+      isTranslatingChapter = false;
+      stopRequested = false;
+      action.disabled = false;
+      sourceSelect.disabled = false;
+      targetSelect.disabled = false;
+      translateAction.textContent = "이 화 전체 번역";
+    }
+  });
+
+  panel.append(header, fields, action, translateAction, status);
 
   const launcher = document.createElement("button");
   launcher.className = "launcher";
