@@ -1,6 +1,7 @@
 import { collectComicImages } from "../lib/images";
 import type {
   ImageTranslationResult,
+  SourceLanguage,
   SupportedLanguage,
   TranslateImageMessage,
 } from "../lib/messages";
@@ -8,10 +9,10 @@ import { renderTranslationOverlays } from "../lib/overlay";
 
 type LanguageCode = "auto" | "ja" | "en" | "zh" | "ko";
 
-function resolveSourceLanguage(value: LanguageCode): SupportedLanguage | null {
+function resolveSourceLanguage(value: LanguageCode): SourceLanguage {
   if (value !== "auto") return value;
   if (window.location.hostname === "comic.naver.com") return "ko";
-  return null;
+  return "auto";
 }
 
 function createOption(value: LanguageCode, label: string): HTMLOptionElement {
@@ -19,6 +20,41 @@ function createOption(value: LanguageCode, label: string): HTMLOptionElement {
   option.value = value;
   option.textContent = label;
   return option;
+}
+
+async function readBlobImage(url: string): Promise<string | undefined> {
+  if (!url.startsWith("blob:")) return undefined;
+
+  const image = [...document.images].find((element) => {
+    const candidates = [
+      element.currentSrc,
+      element.src,
+      element.getAttribute("data-src"),
+      element.getAttribute("data-original"),
+      element.getAttribute("data-lazy-src"),
+    ];
+    return candidates.includes(url);
+  });
+  if (image) {
+    try {
+      await image.decode();
+    } catch {
+      // 이미 화면에 표시된 이미지는 decode 실패 후에도 캔버스에 복사할 수 있다.
+    }
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    if (width && height) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("이미지 캔버스를 만들지 못했습니다.");
+      context.drawImage(image, 0, 0, width, height);
+      return canvas.toDataURL("image/png");
+    }
+  }
+
+  throw new Error("화면에 표시된 blob 이미지를 찾지 못했습니다.");
 }
 
 function mountWidget(): void {
@@ -205,11 +241,6 @@ function mountWidget(): void {
     const sourceLanguage = resolveSourceLanguage(
       sourceSelect.value as LanguageCode,
     );
-    if (!sourceLanguage) {
-      status.textContent =
-        "이 사이트에서는 아직 원문 언어를 직접 선택해야 합니다.";
-      return;
-    }
 
     images = collectComicImages();
     if (!images.length) {
@@ -225,6 +256,7 @@ function mountWidget(): void {
     translateAction.textContent = "번역 중지";
     let completed = 0;
     let rendered = 0;
+    let activeSourceLanguage = sourceLanguage;
     const failures: string[] = [];
 
     try {
@@ -235,25 +267,34 @@ function mountWidget(): void {
           `전체 ${images.length}장 중 ${completed + 1}번째 이미지를 ` +
           "번역하고 있습니다…";
 
-        const message: TranslateImageMessage = {
-          type: "translate-image",
-          payload: {
-            url: image.url,
-            referrer: window.location.href,
-            sourceLanguage,
-            targetLanguage: targetSelect.value as SupportedLanguage,
-            quality: "fast",
-            inpaint: true,
-            inpaintMethod: "opencv",
-          },
-        };
-        const response = (await browser.runtime.sendMessage(message)) as
-          | ImageTranslationResult
-          | { error: string };
+        let response: ImageTranslationResult | { error: string };
+        try {
+          const message: TranslateImageMessage = {
+            type: "translate-image",
+            payload: {
+              url: image.url,
+              imageData: await readBlobImage(image.url),
+              referrer: window.location.href,
+              sourceLanguage: activeSourceLanguage,
+              targetLanguage: targetSelect.value as SupportedLanguage,
+              quality: "ocr",
+              inpaint: true,
+              inpaintMethod: "opencv",
+            },
+          };
+          response = (await browser.runtime.sendMessage(message)) as
+            | ImageTranslationResult
+            | { error: string };
+        } catch (error) {
+          response = {
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
 
         if ("error" in response) {
           failures.push(`${image.index + 1}번: ${response.error}`);
         } else {
+          activeSourceLanguage = response.source_language;
           rendered += renderTranslationOverlays(
             image,
             response.regions,
