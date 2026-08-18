@@ -9,10 +9,30 @@ import { renderTranslationOverlays } from "../lib/overlay";
 
 type LanguageCode = "auto" | "ja" | "en" | "zh" | "ko";
 
+const SITE_SOURCE_LANGUAGES: Record<string, SourceLanguage> = {
+  "comic.naver.com": "ko",
+  "sorajimatoon.com": "ja",
+};
+
 function resolveSourceLanguage(value: LanguageCode): SourceLanguage {
   if (value !== "auto") return value;
-  if (window.location.hostname === "comic.naver.com") return "ko";
+  const hostname = window.location.hostname.replace(/^www\./, "");
+  const siteLanguage = SITE_SOURCE_LANGUAGES[hostname];
+  if (siteLanguage) return siteLanguage;
   return "auto";
+}
+
+function prioritizeVisibleImages<T extends { top: number; height: number }>(
+  images: T[],
+): T[] {
+  const viewportCenter = window.scrollY + window.innerHeight / 2;
+  return [...images].sort((left, right) => {
+    const leftDistance = Math.abs(left.top + left.height / 2 - viewportCenter);
+    const rightDistance = Math.abs(
+      right.top + right.height / 2 - viewportCenter,
+    );
+    return leftDistance - rightDistance;
+  });
 }
 
 function createOption(value: LanguageCode, label: string): HTMLOptionElement {
@@ -242,7 +262,7 @@ function mountWidget(): void {
       sourceSelect.value as LanguageCode,
     );
 
-    images = collectComicImages();
+    images = prioritizeVisibleImages(collectComicImages());
     if (!images.length) {
       status.textContent = "이 화에서 번역할 이미지를 찾지 못했습니다.";
       return;
@@ -265,7 +285,7 @@ function mountWidget(): void {
 
         status.textContent =
           `전체 ${images.length}장 중 ${completed + 1}번째 이미지를 ` +
-          "번역하고 있습니다…";
+          "번역하고 있습니다…\n현재 화면에 가까운 이미지부터 처리합니다.";
 
         let response: ImageTranslationResult | { error: string };
         try {
