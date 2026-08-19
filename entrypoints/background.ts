@@ -3,7 +3,7 @@ import type {
   TranslateImageMessage,
 } from "../lib/messages";
 
-const ENGINE_URL = "http://127.0.0.1:8765";
+const ENGINE_URL = "http://100.107.63.5:8765";
 
 function dataUrlToBlob(dataUrl: string): Blob {
   const separator = dataUrl.indexOf(",");
